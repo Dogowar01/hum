@@ -34,7 +34,10 @@
     --warm: #D4A24E;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-  html, body { height: 100%; overflow: hidden; }
+  /* paint the ground colour on html too — otherwise iOS shows a white strip
+     in the safe-area / overscroll region below the fixed body */
+  html { background: #0B0D12; }
+  html, body { height: 100%; overflow: hidden; overscroll-behavior: none; }
   @supports (height: 100dvh) { body { height: 100dvh; } }
   body {
     background: radial-gradient(120% 90% at 50% 30%, var(--ground-1) 0%, var(--ground-0) 70%);
@@ -293,7 +296,7 @@
 
   // ---------- Audio ----------
   let audioCtx, analyser, freqData, timeData, binWidth, running = false, demoMode = false;
-  const state = { level: 0, bass: 0, lowMid: 0, mid: 0, treble: 0, domFreq: 0, hue: 0.08 };
+  const state = { level: 0, bass: 0, lowMid: 0, mid: 0, treble: 0, domFreq: 0, hue: 0.125, db: -70 };
   const humEMA = { 50: 0, 60: 0 };
   const domHist = [];
   let peakDb = -Infinity; // session peak, relative dBFS
@@ -370,6 +373,7 @@
     const loud = Math.min(1, Math.max(0, (dbfs + 70) / 70));
 
     state.level += (loud - state.level) * 0.32;
+    state.db += (dbfs - state.db) * 0.25;
     if (dbfs > peakDb) peakDb = dbfs;
     state.bass    += (bandAvg(20,250)   - state.bass)    * 0.3;
     state.lowMid  += (bandAvg(250,800)  - state.lowMid)  * 0.3;
@@ -410,7 +414,9 @@
     const f = 60 + 4000 * (0.5 + 0.5*Math.sin(dt*0.35));
     state.domFreq += (f - state.domFreq) * 0.05;
     humEMA[50] = 4 + 4 * Math.sin(dt * 0.4); // synthetic fingerprint so the core lives in preview
-    return { dbfs: -30 + 20*pulse, loud: state.level, dom: f, maxV: 120 };
+    const dbfs = -30 + 20*pulse;
+    state.db += (dbfs - state.db) * 0.1;
+    return { dbfs, loud: state.level, dom: f, maxV: 120 };
   }
 
   // ---------- readout UI ----------
@@ -541,21 +547,25 @@
       cPos.array[i*3+2] = coreBasePos[i*3+2] * d;
     }
     cPos.needsUpdate = true;
+    // the shell measures the decibel reading: normalise the smoothed dBFS
+    // over the same span as the descriptor bands (quiet room .. traffic)
+    const dbNorm = Math.min(1, Math.max(0, (state.db + 62) / 44));
+
     core.scale.setScalar(0.42 + lvl * 0.24);
     core.rotation.y -= 0.003 + humNorm * 0.004;
-    _cc.copy(CORE_BLUE).lerp(CORE_SILVER, Math.min(1, lvl * 1.2));
+    _cc.copy(CORE_BLUE).lerp(CORE_SILVER, dbNorm);
     coreMat.color.copy(_cc);
     coreMat.opacity = 0.22 + humNorm * 0.4 + lvl * 0.15;
     coreWireMat.color.copy(_cc);
     coreWireMat.opacity = 0.15 + humNorm * 0.35;
 
-    // shell colour by loudness: gold (quiet) -> plum (loud)
-    const targetHue = levelToHue(lvl);
+    // shell colour by decibel reading: gold (quiet) -> plum (loud)
+    const targetHue = levelToHue(dbNorm);
     state.hue += (targetHue - state.hue) * 0.08;
     _c.setHSL(wrapHue(state.hue), 0.62, 0.55);
     solidMat.emissive.copy(_c);
-    solidMat.emissiveIntensity = 0.18 + lvl * 1.2;
-    solidMat.opacity = 0.26 + lvl * 0.14;
+    solidMat.emissiveIntensity = 0.18 + dbNorm * 1.2;
+    solidMat.opacity = 0.26 + dbNorm * 0.14;
     wireMat.color.copy(_c);
     wireMat.opacity = 0.08 + lvl * 0.3;
     haloMat.color.copy(_c);
