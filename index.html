@@ -31,10 +31,11 @@
     --ink: #E8E6E0;
     --muted: #6B6F7A;
     --hair: rgba(255,255,255,0.09);
-    --warm: #D9764E;
+    --warm: #D4A24E;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { height: 100%; overflow: hidden; }
+  @supports (height: 100dvh) { body { height: 100dvh; } }
   body {
     background: radial-gradient(120% 90% at 50% 30%, var(--ground-1) 0%, var(--ground-0) 70%);
     color: var(--ink);
@@ -129,6 +130,7 @@
       <div class="k">Level</div>
       <div class="v"><span id="lvl">—</span> <span class="u">rel</span></div>
       <div class="bar"><i id="lvlBar"></i></div>
+      <div class="k" style="margin-top:8px"><span id="env">—</span></div>
     </div>
     <div class="cell">
       <div class="k">Dominant</div>
@@ -143,7 +145,7 @@
 
   <div class="veil" id="veil">
     <h1>Hum</h1>
-    <p>Listens to a room. Reads its background level and the shape of what's in it — steady mains hum, a whine, a low rumble — as a sphere that shifts warm to cool with frequency.</p>
+    <p>Listens to a room. Reads its background level and the shape of what's in it — steady mains hum, a whine, a low rumble — as a glass sphere that glows gold when quiet and deepens to plum as the room gets louder, its hum fingerprint burning inside.</p>
     <button class="go" id="go">Begin listening</button>
     <p class="subtle">Levels are relative, not calibrated dB.<br/><button id="demo">Preview without mic →</button></p>
   </div>
@@ -208,9 +210,14 @@
 
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(50, window.innerWidth/window.innerHeight, 0.1, 100);
-  camera.position.z = 4.2;
+  function fitCamera() {
+    // portrait screens see a narrower horizontal FOV — pull back so the sphere fits
+    camera.position.z = camera.aspect < 1 ? 4.2 / camera.aspect * 0.82 : 4.2;
+  }
+  fitCamera();
 
   const group = new THREE.Group();
+  group.scale.setScalar(0.86); // slightly smaller sphere, more room to breathe
   scene.add(group);
 
   const DETAIL = 5; // icosahedron subdivision — detailed but mobile-safe
@@ -225,22 +232,51 @@
     baseDir[i*3]=x/l; baseDir[i*3+1]=y/l; baseDir[i*3+2]=z/l;
   }
 
+  // transparent glass shell — the inner hum core shows through
   const solidMat = new THREE.MeshStandardMaterial({
-    color: 0x0e1016, roughness: 0.35, metalness: 0.25,
-    emissive: new THREE.Color(0xD9764E), emissiveIntensity: 0.15, flatShading: false
+    color: 0x0e1016, roughness: 0.2, metalness: 0.3,
+    emissive: new THREE.Color(0xD4A24E), emissiveIntensity: 0.15, flatShading: false,
+    transparent: true, opacity: 0.32, depthWrite: false
   });
   const solid = new THREE.Mesh(geo, solidMat);
+  solid.renderOrder = 2;
   group.add(solid);
 
   const wireMat = new THREE.MeshBasicMaterial({
-    color: 0xD9764E, wireframe: true, transparent: true, opacity: 0.18, blending: THREE.AdditiveBlending
+    color: 0xD4A24E, wireframe: true, transparent: true, opacity: 0.12, blending: THREE.AdditiveBlending
   });
   const wire = new THREE.Mesh(geo, wireMat); // shares deformed geometry
   wire.scale.setScalar(1.008);
+  wire.renderOrder = 3;
   group.add(wire);
 
+  // inner hum core — renders the mains-hum fingerprint inside the glass shell,
+  // deep blue when quiet, silvering as the room gets louder
+  const coreGeo = new THREE.IcosahedronGeometry(1, 3);
+  const coreBasePos = coreGeo.attributes.position.array.slice(0);
+  const coreCount = coreGeo.attributes.position.count;
+  const coreDir = new Float32Array(coreCount * 3);
+  for (let i = 0; i < coreCount; i++) {
+    const x = coreBasePos[i*3], y = coreBasePos[i*3+1], z = coreBasePos[i*3+2];
+    const l = Math.hypot(x,y,z) || 1;
+    coreDir[i*3]=x/l; coreDir[i*3+1]=y/l; coreDir[i*3+2]=z/l;
+  }
+  const coreMat = new THREE.MeshBasicMaterial({
+    color: 0x16306E, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending
+  });
+  const core = new THREE.Mesh(coreGeo, coreMat);
+  core.scale.setScalar(0.5);
+  core.renderOrder = 1;
+  group.add(core);
+  const coreWireMat = new THREE.MeshBasicMaterial({
+    color: 0x16306E, wireframe: true, transparent: true, opacity: 0.25, blending: THREE.AdditiveBlending
+  });
+  const coreWire = new THREE.Mesh(coreGeo, coreWireMat);
+  coreWire.scale.setScalar(1.01);
+  core.add(coreWire);
+
   // halo
-  const haloMat = new THREE.MeshBasicMaterial({ color: 0xD9764E, transparent: true, opacity: 0.05, side: THREE.BackSide, blending: THREE.AdditiveBlending });
+  const haloMat = new THREE.MeshBasicMaterial({ color: 0xD4A24E, transparent: true, opacity: 0.05, side: THREE.BackSide, blending: THREE.AdditiveBlending });
   const halo = new THREE.Mesh(new THREE.SphereGeometry(1.35, 32, 32), haloMat);
   group.add(halo);
 
@@ -249,7 +285,9 @@
   const rim = new THREE.PointLight(0xD9764E, 0.9); rim.position.set(-4,-2,2); scene.add(rim);
 
   window.addEventListener('resize', () => {
-    camera.aspect = window.innerWidth/window.innerHeight; camera.updateProjectionMatrix();
+    camera.aspect = window.innerWidth/window.innerHeight;
+    fitCamera();
+    camera.updateProjectionMatrix();
     renderer.setSize(window.innerWidth, window.innerHeight);
   });
 
@@ -258,6 +296,7 @@
   const state = { level: 0, bass: 0, lowMid: 0, mid: 0, treble: 0, domFreq: 0, hue: 0.08 };
   const humEMA = { 50: 0, 60: 0 };
   const domHist = [];
+  let peakDb = -Infinity; // session peak, relative dBFS
 
   async function startMic() {
     try {
@@ -277,6 +316,7 @@
       running = true; demoMode = false;
       setStatus('listening', true);
       hideVeil();
+      keepAwake();
     } catch (e) {
       // Mic blocked (common inside embedded previews) — fall back to preview.
       startDemo(true);
@@ -287,7 +327,18 @@
     demoMode = true; running = true;
     setStatus(fromError ? 'no mic · preview' : 'preview', true);
     hideVeil();
+    keepAwake();
   }
+
+  // keep the display on while listening (an instrument shouldn't doze off);
+  // silently unsupported on older browsers
+  let wakeLock = null;
+  async function keepAwake() {
+    try { wakeLock = await navigator.wakeLock.request('screen'); } catch (e) {}
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (running && document.visibilityState === 'visible') keepAwake();
+  });
 
   // ---------- analysis helpers ----------
   function bandAvg(loHz, hiHz) {
@@ -318,7 +369,8 @@
     const dbfs = 20 * Math.log10(rms + 1e-8);          // ~ -80..0
     const loud = Math.min(1, Math.max(0, (dbfs + 70) / 70));
 
-    state.level += (loud - state.level) * 0.25;
+    state.level += (loud - state.level) * 0.32;
+    if (dbfs > peakDb) peakDb = dbfs;
     state.bass    += (bandAvg(20,250)   - state.bass)    * 0.3;
     state.lowMid  += (bandAvg(250,800)  - state.lowMid)  * 0.3;
     state.mid     += (bandAvg(800,3000) - state.mid)     * 0.3;
@@ -357,6 +409,7 @@
     state.treble += ((0.2 + 0.2*Math.sin(dt*3.7)) - state.treble) * 0.06;
     const f = 60 + 4000 * (0.5 + 0.5*Math.sin(dt*0.35));
     state.domFreq += (f - state.domFreq) * 0.05;
+    humEMA[50] = 4 + 4 * Math.sin(dt * 0.4); // synthetic fingerprint so the core lives in preview
     return { dbfs: -30 + 20*pulse, loud: state.level, dom: f, maxV: 120 };
   }
 
@@ -365,6 +418,18 @@
   const dot = el('dot');
   function setStatus(text, live) { el('statusText').textContent = text; dot.classList.toggle('live', !!live); }
   function hideVeil() { el('veil').classList.add('gone'); }
+
+  // rough everyday comparison for the relative level — the mic is
+  // uncalibrated, so these are approximations, never a dB(SPL) claim
+  function levelDescriptor(db) {
+    if (db < -62) return 'silent / still';
+    if (db < -52) return 'quiet room';
+    if (db < -44) return 'whisper / leaves';
+    if (db < -36) return 'conversation';
+    if (db < -28) return 'busy room';
+    if (db < -18) return 'traffic';
+    return 'loud';
+  }
 
   function freqLabel(f) {
     if (f < 20) return 'quiet';
@@ -384,6 +449,9 @@
     el('lvl').textContent = demoMode ? '––' : Math.round(m.dbfs);
     el('lvlBar').style.width = (state.level * 100).toFixed(0) + '%';
     el('lvlBar').style.background = hslCss(state.hue);
+    el('env').textContent = demoMode
+      ? 'preview'
+      : '≈ ' + levelDescriptor(m.dbfs) + (peakDb > -90 ? ' · pk ' + Math.round(peakDb) : '');
 
     const f = state.domFreq;
     el('freq').textContent = f > 20 ? Math.round(f) : '—';
@@ -413,14 +481,18 @@
   }
 
   // ---------- colour ----------
-  // low freq -> warm (hue ~0.08), high freq -> cool violet (hue ~0.72)
-  function freqToHue(f) {
-    if (f < 20) return 0.08;
-    const t = (Math.log(f) - Math.log(40)) / (Math.log(12000) - Math.log(40));
-    return 0.08 + Math.min(1, Math.max(0, t)) * 0.64;
+  // quiet -> gold (hue ~45°), loud -> plum (hue ~313°), travelling down
+  // through amber and rose so the sphere never passes through green/blue.
+  function levelToHue(lvl) {
+    return 0.125 - Math.min(1, Math.max(0, lvl)) * 0.255; // may go negative; wrapped at use
   }
-  function hslCss(h) { return `hsl(${(h*360).toFixed(0)}, 78%, 60%)`; }
+  function wrapHue(h) { return ((h % 1) + 1) % 1; }
+  function hslCss(h) { return `hsl(${(wrapHue(h)*360).toFixed(0)}, 62%, 58%)`; }
   const _c = new THREE.Color();
+  // inner core: deep blue when quiet -> silver when loud
+  const CORE_BLUE = new THREE.Color(0x16306E);
+  const CORE_SILVER = new THREE.Color(0xC9CDD6);
+  const _cc = new THREE.Color();
 
   // ---------- render loop ----------
   const posAttr = geo.attributes.position;
@@ -435,15 +507,16 @@
 
     time += 0.016;
     const lvl = state.level;
-    const ampLow  = (0.10 + state.bass * 0.55) * motionScale;
-    const ampHigh = (state.treble * 0.18) * motionScale;
-    const swell = 1 + lvl * 0.18;
+    // smoother surface: gentler broad noise, much less fine spike, stronger swell
+    const ampLow  = (0.07 + state.bass * 0.42) * motionScale;
+    const ampHigh = (state.treble * 0.08) * motionScale;
+    const swell = 1 + lvl * 0.3;
 
-    const t1 = time * 0.35, t2 = time * 1.1;
+    const t1 = time * 0.35, t2 = time * 0.9;
     for (let i = 0; i < vCount; i++) {
       const nx = baseDir[i*3], ny = baseDir[i*3+1], nz = baseDir[i*3+2];
-      const big  = Simplex(nx*1.4 + t1, ny*1.4 - t1*0.6, nz*1.4);
-      const fine = Simplex(nx*3.2 + t2, ny*3.2, nz*3.2 - t2);
+      const big  = Simplex(nx*1.1 + t1, ny*1.1 - t1*0.6, nz*1.1);
+      const fine = Simplex(nx*2.4 + t2, ny*2.4, nz*2.4 - t2);
       const d = swell + big * ampLow + fine * ampHigh;
       posAttr.array[i*3]   = basePos[i*3]   * d;
       posAttr.array[i*3+1] = basePos[i*3+1] * d;
@@ -452,21 +525,46 @@
     posAttr.needsUpdate = true;
     geo.computeVertexNormals();
 
-    // colour by dominant frequency
-    const targetHue = freqToHue(state.domFreq);
-    state.hue += (targetHue - state.hue) * 0.06;
-    _c.setHSL(state.hue, 0.72, 0.55);
+    // inner hum core: ripple amplitude tracks the fingerprint strength,
+    // scale tracks level
+    const humStrength = Math.max(humEMA[50], humEMA[60]);
+    const humNorm = Math.min(1, humStrength / 12);
+    const t3 = time * (0.6 + humNorm * 1.6);
+    const coreAmp = (0.05 + humNorm * 0.35) * motionScale;
+    const cPos = coreGeo.attributes.position;
+    for (let i = 0; i < coreCount; i++) {
+      const nx = coreDir[i*3], ny = coreDir[i*3+1], nz = coreDir[i*3+2];
+      const rip = Simplex(nx*2.0 + t3, ny*2.0 - t3, nz*2.0);
+      const d = 1 + rip * coreAmp;
+      cPos.array[i*3]   = coreBasePos[i*3]   * d;
+      cPos.array[i*3+1] = coreBasePos[i*3+1] * d;
+      cPos.array[i*3+2] = coreBasePos[i*3+2] * d;
+    }
+    cPos.needsUpdate = true;
+    core.scale.setScalar(0.42 + lvl * 0.24);
+    core.rotation.y -= 0.003 + humNorm * 0.004;
+    _cc.copy(CORE_BLUE).lerp(CORE_SILVER, Math.min(1, lvl * 1.2));
+    coreMat.color.copy(_cc);
+    coreMat.opacity = 0.22 + humNorm * 0.4 + lvl * 0.15;
+    coreWireMat.color.copy(_cc);
+    coreWireMat.opacity = 0.15 + humNorm * 0.35;
+
+    // shell colour by loudness: gold (quiet) -> plum (loud)
+    const targetHue = levelToHue(lvl);
+    state.hue += (targetHue - state.hue) * 0.08;
+    _c.setHSL(wrapHue(state.hue), 0.62, 0.55);
     solidMat.emissive.copy(_c);
-    solidMat.emissiveIntensity = 0.12 + lvl * 1.1;
+    solidMat.emissiveIntensity = 0.18 + lvl * 1.2;
+    solidMat.opacity = 0.26 + lvl * 0.14;
     wireMat.color.copy(_c);
-    wireMat.opacity = 0.10 + lvl * 0.4;
+    wireMat.opacity = 0.08 + lvl * 0.3;
     haloMat.color.copy(_c);
     haloMat.opacity = 0.03 + lvl * 0.14;
-    halo.scale.setScalar(1 + lvl * 0.12);
+    halo.scale.setScalar(1 + lvl * 0.14);
     rim.color.copy(_c);
 
     const rot = reduceMotion ? 0.0008 : 0.0022;
-    group.rotation.y += rot + lvl * 0.004;
+    group.rotation.y += rot + lvl * 0.006;
     group.rotation.x = Math.sin(time * 0.1) * 0.12;
 
     updateReadout(m);

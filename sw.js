@@ -1,7 +1,7 @@
 /* Hum — Service Worker
    Cache-first strategy for the app shell. Bump CACHE_VERSION on each deploy. */
 
-const CACHE_VERSION = 'hum-v1';
+const CACHE_VERSION = 'hum-v2';
 const ASSETS = [
   './',
   './index.html',
